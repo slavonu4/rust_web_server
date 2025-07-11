@@ -20,7 +20,7 @@ pub struct Server {
 pub struct Config {
     #[arg(long, value_parser = valid_pool_size)]
     pub pool_size: usize,
-    #[arg(long, default_value = "127.0.0.1:8080", value_parser = valid_address)]
+    #[arg(long, default_value = "127.0.0.1", value_parser = valid_address)]
     pub host: Ipv4Addr,
     #[arg(short, long, default_value_t = 8080, value_parser = port_in_range)]
     pub port: u16,
