@@ -18,7 +18,7 @@ pub struct Server {
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 pub struct Config {
-    #[arg(long, value_parser = valid_pool_size)]
+    #[arg(long, value_parser = valid_pool_size, default_value_t = 1)]
     pub pool_size: usize,
     #[arg(long, default_value = "127.0.0.1", value_parser = valid_address)]
     pub host: Ipv4Addr,
