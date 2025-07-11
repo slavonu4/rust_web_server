@@ -2,7 +2,8 @@ use clap::Parser;
 use std::{
     fs,
     io::{BufRead, BufReader, Write},
-    net::{TcpListener, TcpStream},
+    net::{Ipv4Addr, SocketAddr, SocketAddrV4, TcpListener, TcpStream},
+    ops::RangeInclusive,
     thread,
     time::Duration,
 };
@@ -11,26 +12,63 @@ use crate::concurrent::thread_pool::ThreadPool;
 
 pub struct Server {
     pool: ThreadPool,
-    address: String,
+    address: SocketAddr,
 }
 
-// TODO: see if some validation and default value for address can be added
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 pub struct Config {
-    #[arg(short, long, default_value_t = 1)]
+    #[arg(long, value_parser = valid_pool_size)]
     pub pool_size: usize,
-    #[arg(short, long, default_value = "127.0.0.1:8080")]
-    pub address: String,
+    #[arg(long, default_value = "127.0.0.1:8080", value_parser = valid_address)]
+    pub host: Ipv4Addr,
+    #[arg(short, long, default_value_t = 8080, value_parser = port_in_range)]
+    pub port: u16,
+}
+
+fn valid_pool_size(s: &str) -> Result<usize, String> {
+    let pool_size: usize = s
+        .parse()
+        .map_err(|_| format!("{s} is not a valid pool size"))?;
+
+    if pool_size > 0 {
+        Ok(pool_size)
+    } else {
+        Err("Pool size can not be less than 1".to_string())
+    }
+}
+
+fn valid_address(s: &str) -> Result<Ipv4Addr, String> {
+    s.parse()
+        .map_err(|_| format!("{s} is not a valid IPv4 string"))
+}
+
+const PORT_RANGE: RangeInclusive<u16> = 1..=65535;
+
+fn port_in_range(s: &str) -> Result<u16, String> {
+    let port: u16 = s
+        .parse()
+        .map_err(|_| format!("{s} is not a valid port number"))?;
+
+    if PORT_RANGE.contains(&port) {
+        Ok(port)
+    } else {
+        Err(format!(
+            "port is not range [{} - {}]",
+            PORT_RANGE.start(),
+            PORT_RANGE.end()
+        ))
+    }
 }
 
 impl Server {
     pub fn create(config: Config) -> Server {
         let thread_pool = ThreadPool::new(config.pool_size);
+        let address = SocketAddrV4::new(config.host, config.port);
 
         Server {
             pool: thread_pool,
-            address: config.address,
+            address: SocketAddr::V4(address),
         }
     }
 
