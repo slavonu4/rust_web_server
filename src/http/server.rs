@@ -20,7 +20,7 @@ pub struct Server {
 pub struct Config {
     #[arg(short, long, default_value_t = 1)]
     pub pool_size: usize,
-    #[arg(short, long)]
+    #[arg(short, long, default_value = "127.0.0.1:8080")]
     pub address: String,
 }
 
