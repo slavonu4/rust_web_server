@@ -78,13 +78,16 @@ impl Server {
             self.address,
             self.pool.size()
         );
-        let listener = TcpListener::bind(&self.address).unwrap();
+        let listener = TcpListener::bind(self.address).unwrap();
+        //TODO: implement parsing incoming request and using registered handles to process it
         for stream in listener.incoming() {
             let stream = stream.unwrap();
 
             self.pool.execute(|| handle_connection(stream));
         }
     }
+
+    //TODO: implement registering request matchers with request handlers
 }
 
 impl Drop for Server {

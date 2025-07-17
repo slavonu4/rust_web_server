@@ -73,6 +73,8 @@ impl RequestBuilder {
     pub fn build(self) -> Request {
         Request::new(self)
     }
+
+    // TODO: implement query params
 }
 
 mod tests {
