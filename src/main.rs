@@ -7,6 +7,6 @@ pub mod http;
 
 fn main() {
     let config = Config::get_config();
-    let server = Server::create(config);
+    let server = Server::builder(config).build();
     server.start();
 }

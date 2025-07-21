@@ -15,6 +15,12 @@ pub struct Server {
     address: SocketAddr,
 }
 
+pub struct ServerBuilder {
+    pool_size: usize,
+    host: Ipv4Addr,
+    port: u16,
+}
+
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 pub struct Config {
@@ -62,13 +68,21 @@ fn port_in_range(s: &str) -> Result<u16, String> {
 }
 
 impl Server {
-    pub fn create(config: Config) -> Server {
-        let thread_pool = ThreadPool::new(config.pool_size);
-        let address = SocketAddrV4::new(config.host, config.port);
+    fn new(builder: ServerBuilder) -> Server {
+        let thread_pool = ThreadPool::new(builder.pool_size);
+        let address = SocketAddrV4::new(builder.host, builder.port);
 
         Server {
             pool: thread_pool,
             address: SocketAddr::V4(address),
+        }
+    }
+
+    pub fn builder(config: Config) -> ServerBuilder {
+        ServerBuilder {
+            pool_size: config.pool_size,
+            host: config.host,
+            port: config.port,
         }
     }
 
@@ -99,6 +113,30 @@ impl Drop for Server {
 impl Config {
     pub fn get_config() -> Config {
         Config::parse()
+    }
+}
+
+impl ServerBuilder {
+    pub fn pool_size(mut self, pool_size: usize) -> ServerBuilder {
+        self.pool_size = pool_size;
+
+        self
+    }
+
+    pub fn port(mut self, port: u16) -> ServerBuilder {
+        self.port = port;
+
+        self
+    }
+
+    pub fn host(mut self, host: Ipv4Addr) -> ServerBuilder {
+        self.host = host;
+
+        self
+    }
+
+    pub fn build(self) -> Server {
+        Server::new(self)
     }
 }
 
