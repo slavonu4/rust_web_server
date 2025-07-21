@@ -100,7 +100,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn builder_must_build_request() {
+    fn builder_must_construct_request_correctly() {
         let request = Request::builder()
             .method(RequestMethod::GET)
             .url("test")
