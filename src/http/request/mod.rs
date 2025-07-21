@@ -68,12 +68,11 @@ impl RequestBuilder {
         header_name: impl Into<String>,
         header_value: impl Into<String>,
     ) -> Self {
+        let header_name = Into::into(header_name);
         let header_value = Into::into(header_value);
 
-        self.headers
-            .entry(Into::into(header_name))
-            .and_modify(|v| v.push(header_value.clone()))
-            .or_insert(vec![header_value.clone()]);
+        let header_entry = self.headers.entry(header_name).or_default();
+        header_entry.push(header_value);
 
         self
     }
@@ -83,12 +82,11 @@ impl RequestBuilder {
         query_param_name: impl Into<String>,
         query_param_value: impl Into<String>,
     ) -> Self {
+        let query_param_name = Into::into(query_param_name);
         let query_param_value = Into::into(query_param_value);
 
-        self.query_params
-            .entry(Into::into(query_param_name))
-            .and_modify(|v| v.push(query_param_value.clone()))
-            .or_insert(vec![query_param_value.clone()]);
+        let query_param_entry = self.query_params.entry(query_param_name).or_default();
+        query_param_entry.push(query_param_value);
 
         self
     }
@@ -96,8 +94,6 @@ impl RequestBuilder {
     pub fn build(self) -> Request {
         Request::new(self)
     }
-
-    // TODO: implement query params
 }
 
 mod tests {
