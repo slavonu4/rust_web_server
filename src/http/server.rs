@@ -8,17 +8,30 @@ use std::{
     time::Duration,
 };
 
-use crate::concurrent::thread_pool::ThreadPool;
+use crate::{
+    concurrent::thread_pool::ThreadPool,
+    http::{
+        request::{matcher::RequestMatcher, Request},
+        response::Response,
+    },
+};
+
+struct RequestHandler {
+    matcher: RequestMatcher,
+    handler_fn: Box<dyn FnOnce(Request) -> Response>,
+}
 
 pub struct Server {
     pool: ThreadPool,
     address: SocketAddr,
+    handlers: Vec<RequestHandler>,
 }
 
 pub struct ServerBuilder {
     pool_size: usize,
     host: Ipv4Addr,
     port: u16,
+    handlers: Vec<RequestHandler>,
 }
 
 #[derive(Parser, Debug)]
@@ -75,6 +88,7 @@ impl Server {
         Server {
             pool: thread_pool,
             address: SocketAddr::V4(address),
+            handlers: builder.handlers,
         }
     }
 
@@ -83,6 +97,7 @@ impl Server {
             pool_size: config.pool_size,
             host: config.host,
             port: config.port,
+            handlers: Vec::new(),
         }
     }
 
@@ -100,8 +115,6 @@ impl Server {
             self.pool.execute(|| handle_connection(stream));
         }
     }
-
-    //TODO: implement registering request matchers with request handlers
 }
 
 impl Drop for Server {
@@ -131,6 +144,21 @@ impl ServerBuilder {
 
     pub fn host(mut self, host: Ipv4Addr) -> ServerBuilder {
         self.host = host;
+
+        self
+    }
+
+    pub fn register_handler(
+        mut self,
+        request_matcher: RequestMatcher,
+        request_handler: impl FnOnce(Request) -> Response + 'static,
+    ) -> ServerBuilder {
+        let handler = RequestHandler {
+            matcher: request_matcher,
+            handler_fn: Box::new(request_handler),
+        };
+
+        self.handlers.push(handler);
 
         self
     }
