@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt::format, io::Error};
 
 pub mod matcher;
 
@@ -24,6 +24,18 @@ pub struct RequestBuilder {
     query_params: HashMap<String, Vec<String>>,
 }
 
+impl RequestMethod {
+    pub fn parse(method: &str) -> Option<RequestMethod> {
+        match method {
+            "GET" => Some(RequestMethod::GET),
+            "POST" => Some(RequestMethod::POST),
+            "PUT" => Some(RequestMethod::PUT),
+            "DELETE" => Some(RequestMethod::DELETE),
+            _ => None,
+        }
+    }
+}
+
 impl Request {
     fn new(builder: RequestBuilder) -> Request {
         Request {
@@ -32,6 +44,17 @@ impl Request {
             headers: builder.headers,
             query_params: builder.query_params,
         }
+    }
+
+    pub fn parse(request_str: &str) -> Result<Request, Error> {
+        let parser_error = parser_error(String::from("Unable to parse an incoming request"));
+        let mut parts = request_str.split("\r\n");
+
+        let (method, path) = match parts.next() {
+            Some(request_line) => parse_request_line(request_line)?,
+            None => return Err(parser_error),
+        };
+        let (url, query_params) = parse_path(&path)?;
     }
 
     pub fn builder() -> RequestBuilder {
@@ -50,6 +73,93 @@ impl Request {
     pub fn get_query_param(&self, query_param_name: &str) -> Option<&Vec<String>> {
         self.query_params.get(query_param_name)
     }
+}
+
+fn parse_request_line(request_line: &str) -> Result<(RequestMethod, String), Error> {
+    let parse_error = parser_error(format!("Invalid request line: {}", request_line));
+
+    let mut request_line_parts = request_line.split(" ");
+
+    let request_method = match request_line_parts.next() {
+        Some(request_method_str) => RequestMethod::parse(request_method_str),
+        None => return Err(parse_error),
+    };
+    let request_method = match request_method {
+        Some(request_method) => request_method,
+        None => return Err(parse_error),
+    };
+
+    let path = match request_line_parts.next() {
+        Some(path) => String::from(path),
+        None => return Err(parse_error),
+    };
+
+    Ok((request_method, path))
+}
+
+fn parse_path(path: &str) -> Result<(String, HashMap<String, Vec<String>>), Error> {
+    let parse_error = parser_error(format!("Invalid path: {}", path));
+
+    let mut path_parts = path.split("&");
+
+    let url = match path_parts.next() {
+        Some(url) => String::from(url),
+        None => return Err(parse_error),
+    };
+
+    let query_params = match path_parts.next() {
+        Some("") => HashMap::default(),
+        Some(query_str) => parse_query_params(query_str)?,
+        None => HashMap::default(),
+    };
+
+    Ok((url, query_params))
+}
+
+fn parse_query_params(query_str: &str) -> Result<HashMap<String, Vec<String>>, Error> {
+    let query_params = query_str.split("&");
+
+    let mut result: HashMap<String, Vec<String>> = HashMap::new();
+    for query_param in query_params {
+        let (param_name, param_values) = parse_query_param(query_param)?;
+
+        let existing_param_values = result.entry(param_name).or_default();
+
+        existing_param_values.extend(param_values);
+    }
+
+    Ok(result)
+}
+
+fn parse_query_param(query_param: &str) -> Result<(String, Vec<String>), Error> {
+    let parse_error = parser_error(format!("Invalid query param: {}", query_param));
+    let mut query_param_parts = query_param.split("=");
+    let param_name = match query_param_parts.next() {
+        Some(param_name) => String::from(param_name),
+        None => return Err(parse_error),
+    };
+    let param_values = match query_param_parts.next() {
+        Some(param_values) => parse_query_param_values(param_values)?,
+        None => return Err(parse_error),
+    };
+
+    Ok((param_name, param_values))
+}
+
+fn parse_query_param_values(query_param_values: &str) -> Result<Vec<String>, Error> {
+    let parse_error = parser_error(format!("Invalid query param value: {}", query_param_values));
+
+    let values: Vec<String> = query_param_values.split(",").map(String::from).collect();
+
+    if values.is_empty() {
+        Err(parse_error)
+    } else {
+        Ok(values)
+    }
+}
+
+fn parser_error(error_message: String) -> Error {
+    Error::new(std::io::ErrorKind::InvalidData, error_message)
 }
 
 impl RequestBuilder {
@@ -156,5 +266,32 @@ mod tests {
             query_param_3.is_none(),
             "Request must not have header 'test_qp_3'"
         );
+    }
+
+    #[test]
+    fn request_method_parse_must_return_correct_value() {
+        let get = RequestMethod::parse("GET");
+        let post = RequestMethod::parse("POST");
+        let put = RequestMethod::parse("PUT");
+        let delete = RequestMethod::parse("DELETE");
+        let unknown = RequestMethod::parse("unknown");
+
+        assert!(
+            get.is_some_and(|m| m == RequestMethod::GET),
+            "GET method must be parsed correctly"
+        );
+        assert!(
+            post.is_some_and(|m| m == RequestMethod::POST),
+            "POST method must be parsed correctly"
+        );
+        assert!(
+            put.is_some_and(|m| m == RequestMethod::PUT),
+            "PUT method must be parsed correctly"
+        );
+        assert!(
+            delete.is_some_and(|m| m == RequestMethod::DELETE),
+            "DELETE method must be parsed correctly"
+        );
+        assert!(unknown.is_none(), "Unknown method must be parsed into None");
     }
 }

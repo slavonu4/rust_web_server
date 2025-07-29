@@ -1,7 +1,8 @@
 use clap::Parser;
 use std::{
+    error::Error,
     fs,
-    io::{BufRead, BufReader, Write},
+    io::{BufRead, BufReader, Read, Write},
     net::{Ipv4Addr, SocketAddr, SocketAddrV4, TcpListener, TcpStream},
     ops::RangeInclusive,
     thread,
@@ -16,9 +17,11 @@ use crate::{
     },
 };
 
+pub type HandlerFn = Box<dyn Fn(Request) -> Response>;
+
 struct RequestHandler {
     matcher: RequestMatcher,
-    handler_fn: Box<dyn FnOnce(Request) -> Response>,
+    handler_fn: HandlerFn,
 }
 
 pub struct Server {
@@ -108,11 +111,29 @@ impl Server {
             self.pool.size()
         );
         let listener = TcpListener::bind(self.address).unwrap();
-        //TODO: implement parsing incoming request and using registered handles to process it
-        for stream in listener.incoming() {
-            let stream = stream.unwrap();
 
-            self.pool.execute(|| handle_connection(stream));
+        for stream in listener.incoming() {
+            //TODO: move it to the thread pool
+            let mut stream = stream.unwrap();
+            let request = match read_to_string(&mut stream) {
+                Ok(request_str) => Request::parse(&request_str),
+                Err(e) => Err(e),
+            };
+
+            let response = match request {
+                Ok(request) => {
+                    let handler = self.handlers.iter().find(|h| h.matcher.matches(&request));
+                    match handler {
+                        Some(handler) => (handler.handler_fn)(request),
+                        None => not_found_response(),
+                    }
+                }
+                Err(e) => server_error_response(e),
+            };
+
+            write_response(response, &stream);
+
+            //self.pool.execute(|| handle_connection(stream));
         }
     }
 }
@@ -151,7 +172,7 @@ impl ServerBuilder {
     pub fn register_handler(
         mut self,
         request_matcher: RequestMatcher,
-        request_handler: impl FnOnce(Request) -> Response + 'static,
+        request_handler: impl Fn(Request) -> Response + 'static,
     ) -> ServerBuilder {
         let handler = RequestHandler {
             matcher: request_matcher,
@@ -188,4 +209,33 @@ fn handle_connection(mut stream: TcpStream) {
 
     let response = format!("{status_line}\r\nContent-Length: {content_length}\r\n\r\n {content}");
     stream.write_all(response.as_bytes()).unwrap();
+}
+
+fn read_to_string(stream: &mut TcpStream) -> Result<String, std::io::Error> {
+    let mut result = String::default();
+
+    match stream.read_to_string(&mut result) {
+        Ok(_) => Ok(result),
+        Err(e) => Err(e),
+    }
+}
+
+fn not_found_response() -> Response {
+    Response::builder()
+        .code(404)
+        .body("Requested page has not been found")
+        .build()
+}
+
+fn server_error_response<E>(error: E) -> Response
+where
+    E: Error,
+{
+    let response_body = format!("Something went wrong: {}", error);
+
+    Response::builder().code(500).body(response_body).build()
+}
+
+fn write_response(response: Response, stream: &TcpStream) {
+    todo!()
 }
