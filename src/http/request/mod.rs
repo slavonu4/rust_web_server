@@ -1,4 +1,6 @@
-use std::{collections::HashMap, fmt::format, io::Error};
+use std::{collections::HashMap, error::Error, fmt::format, io::Error};
+
+use clap::builder;
 
 pub mod matcher;
 
@@ -15,6 +17,7 @@ pub struct Request {
     method: RequestMethod,
     headers: HashMap<String, Vec<String>>,
     query_params: HashMap<String, Vec<String>>,
+    body: String,
 }
 
 pub struct RequestBuilder {
@@ -22,6 +25,7 @@ pub struct RequestBuilder {
     method: RequestMethod,
     headers: HashMap<String, Vec<String>>,
     query_params: HashMap<String, Vec<String>>,
+    body: String,
 }
 
 impl RequestMethod {
@@ -43,6 +47,7 @@ impl Request {
             method: builder.method,
             headers: builder.headers,
             query_params: builder.query_params,
+            body: builder.body,
         }
     }
 
@@ -55,14 +60,35 @@ impl Request {
             None => return Err(parser_error),
         };
         let (url, query_params) = parse_path(&path)?;
+
+        let header_lines = Vec::new();
+        while let Some(header_line) = parts.next() {
+            if header_line == "" {
+                break;
+            }
+
+            header_lines.push(String::from(header_line));
+        }
+
+        let headers = parse_headers(header_lines)?;
+        let body: String = parts.take_while(|s| s.to_owned() != "").collect();
+
+        Ok(Request {
+            url,
+            method,
+            headers,
+            query_params,
+            body,
+        })
     }
 
     pub fn builder() -> RequestBuilder {
         RequestBuilder {
-            url: String::from(""),
+            url: String::default(),
             method: RequestMethod::GET,
             headers: HashMap::new(),
             query_params: HashMap::new(),
+            body: String::default(),
         }
     }
 
@@ -158,6 +184,38 @@ fn parse_query_param_values(query_param_values: &str) -> Result<Vec<String>, Err
     }
 }
 
+fn parse_headers(header_lines: Vec<String>) -> Result<HashMap<String, Vec<String>>, Error> {
+    let parse_error = parser_error(String::from("Invalid headers"));
+    let result: HashMap<String, Vec<String>> = HashMap::with_capacity(header_lines.len());
+
+    for header_line in header_lines {
+        let mut header_parts = header_line.split(": ");
+
+        let header_name = match header_parts.next() {
+            Some(name) => String::from(name),
+            None => return parse_error,
+        };
+
+        let header_values = match header_parts.next() {
+            Some(values) => parse_header_values(values),
+            None => Vec::new(),
+        };
+
+        let existing_values = result.entry(header_name).or_default();
+        existing_values.extend(header_values);
+    }
+
+    Ok(result)
+}
+
+fn parse_header_values(header_values: &str) -> Vec<String> {
+    header_values
+        .split(",")
+        .filter(|v| !v.is_empty())
+        .map(String::from)
+        .collect()
+}
+
 fn parser_error(error_message: String) -> Error {
     Error::new(std::io::ErrorKind::InvalidData, error_message)
 }
@@ -201,6 +259,12 @@ impl RequestBuilder {
         self
     }
 
+    pub fn body(mut self, body: impl Into<String>) -> Self {
+        self.body = Into::into(body);
+
+        self
+    }
+
     pub fn build(self) -> Request {
         Request::new(self)
     }
@@ -214,6 +278,7 @@ mod tests {
         let request = Request::builder()
             .method(RequestMethod::GET)
             .url("test")
+            .body("test_body")
             .add_header("test_header_1", "test_value_1_1")
             .add_header("test_header_1", "test_value_1_2")
             .add_header("test_header_2", "test_value_2_1")
@@ -228,6 +293,10 @@ mod tests {
             "Request method must be 'GET'"
         );
         assert_eq!("test", request.url, "Request url must be 'test'");
+        assert_eq!(
+            "test_body", request.body,
+            "Request body must be 'test_body'"
+        );
 
         let header_1 = request.get_header("test_header_1");
         assert!(
