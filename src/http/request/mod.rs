@@ -1,6 +1,7 @@
-use std::{collections::HashMap, error::Error, fmt::format, io::Error};
-
-use clap::builder;
+use std::{
+    collections::HashMap,
+    io::{Error, ErrorKind},
+};
 
 pub mod matcher;
 
@@ -61,7 +62,7 @@ impl Request {
         };
         let (url, query_params) = parse_path(&path)?;
 
-        let header_lines = Vec::new();
+        let mut header_lines = Vec::new();
         while let Some(header_line) = parts.next() {
             if header_line == "" {
                 break;
@@ -126,7 +127,7 @@ fn parse_request_line(request_line: &str) -> Result<(RequestMethod, String), Err
 fn parse_path(path: &str) -> Result<(String, HashMap<String, Vec<String>>), Error> {
     let parse_error = parser_error(format!("Invalid path: {}", path));
 
-    let mut path_parts = path.split("&");
+    let mut path_parts = path.split('?');
 
     let url = match path_parts.next() {
         Some(url) => String::from(url),
@@ -186,14 +187,14 @@ fn parse_query_param_values(query_param_values: &str) -> Result<Vec<String>, Err
 
 fn parse_headers(header_lines: Vec<String>) -> Result<HashMap<String, Vec<String>>, Error> {
     let parse_error = parser_error(String::from("Invalid headers"));
-    let result: HashMap<String, Vec<String>> = HashMap::with_capacity(header_lines.len());
+    let mut result: HashMap<String, Vec<String>> = HashMap::with_capacity(header_lines.len());
 
     for header_line in header_lines {
         let mut header_parts = header_line.split(": ");
 
         let header_name = match header_parts.next() {
             Some(name) => String::from(name),
-            None => return parse_error,
+            None => return Err(parse_error),
         };
 
         let header_values = match header_parts.next() {
@@ -217,7 +218,7 @@ fn parse_header_values(header_values: &str) -> Vec<String> {
 }
 
 fn parser_error(error_message: String) -> Error {
-    Error::new(std::io::ErrorKind::InvalidData, error_message)
+    Error::new(ErrorKind::InvalidData, error_message)
 }
 
 impl RequestBuilder {
