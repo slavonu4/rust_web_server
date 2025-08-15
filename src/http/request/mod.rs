@@ -16,7 +16,7 @@ pub enum RequestMethod {
 pub struct Request {
     url: String,
     method: RequestMethod,
-    headers: HashMap<String, Vec<String>>,
+    headers: HashMap<String, String>,
     query_params: HashMap<String, Vec<String>>,
     body: String,
 }
@@ -24,7 +24,7 @@ pub struct Request {
 pub struct RequestBuilder {
     url: String,
     method: RequestMethod,
-    headers: HashMap<String, Vec<String>>,
+    headers: HashMap<String, String>,
     query_params: HashMap<String, Vec<String>>,
     body: String,
 }
@@ -185,9 +185,9 @@ fn parse_query_param_values(query_param_values: &str) -> Result<Vec<String>, Err
     }
 }
 
-fn parse_headers(header_lines: Vec<String>) -> Result<HashMap<String, Vec<String>>, Error> {
+fn parse_headers(header_lines: Vec<String>) -> Result<HashMap<String, String>, Error> {
     let parse_error = parser_error(String::from("Invalid headers"));
-    let mut result: HashMap<String, Vec<String>> = HashMap::with_capacity(header_lines.len());
+    let mut result: HashMap<String, String> = HashMap::with_capacity(header_lines.len());
 
     for header_line in header_lines {
         let mut header_parts = header_line.split(": ");
@@ -197,24 +197,15 @@ fn parse_headers(header_lines: Vec<String>) -> Result<HashMap<String, Vec<String
             None => return Err(parse_error),
         };
 
-        let header_values = match header_parts.next() {
-            Some(values) => parse_header_values(values),
-            None => Vec::new(),
+        let header_value = match header_parts.next() {
+            Some(value) => String::from(value),
+            None => String::default(),
         };
 
-        let existing_values = result.entry(header_name).or_default();
-        existing_values.extend(header_values);
+        result.insert(header_name, header_value);
     }
 
     Ok(result)
-}
-
-fn parse_header_values(header_values: &str) -> Vec<String> {
-    header_values
-        .split(",")
-        .filter(|v| !v.is_empty())
-        .map(String::from)
-        .collect()
 }
 
 fn parser_error(error_message: String) -> Error {
