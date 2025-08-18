@@ -146,7 +146,7 @@ fn parse_request_line(request_line: &str) -> Result<(RequestMethod, String), Err
 fn parse_path(path: &str) -> Result<(String, HashMap<String, Vec<String>>), Error> {
     let parse_error = parser_error(format!("Invalid path: {}", path));
 
-    let mut path_parts = path.split("&");
+    let mut path_parts = path.split('?');
 
     let url = match path_parts.next() {
         Some(url) => String::from(url),
@@ -163,7 +163,7 @@ fn parse_path(path: &str) -> Result<(String, HashMap<String, Vec<String>>), Erro
 }
 
 fn parse_query_params(query_str: &str) -> Result<HashMap<String, Vec<String>>, Error> {
-    let query_params = query_str.split('?');
+    let query_params = query_str.split('&');
 
     let mut result: HashMap<String, Vec<String>> = HashMap::new();
     for query_param in query_params {

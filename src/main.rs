@@ -11,7 +11,7 @@ pub mod http;
 fn main() {
     let config = Config::get_config();
     let server = Server::builder(config)
-        .register_handler(RequestMatcher::get().url("/test").build(), |_| {
+        .register_handler(RequestMatcher::post().url("/test").build(), |_| {
             Response::builder()
                 .code(200)
                 .add_header("Content-Type", "text/plain")
