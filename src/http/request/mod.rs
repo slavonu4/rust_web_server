@@ -68,7 +68,7 @@ impl Request {
         let mut header_line = String::default();
         while reader.read_line(&mut header_line).is_ok() {
             let trimmed_header_line = String::from(header_line.trim());
-            if trimmed_header_line == "" {
+            if trimmed_header_line.is_empty() {
                 break;
             }
 

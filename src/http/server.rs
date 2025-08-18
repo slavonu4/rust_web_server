@@ -1,12 +1,8 @@
 use clap::Parser;
 use std::{
     error::Error,
-    fs,
-    io::{BufRead, BufReader, Write},
-    net::{Ipv4Addr, SocketAddr, SocketAddrV4, TcpListener, TcpStream},
+    net::{Ipv4Addr, SocketAddr, SocketAddrV4, TcpListener},
     ops::RangeInclusive,
-    thread,
-    time::Duration,
 };
 
 use crate::{
@@ -114,15 +110,12 @@ impl Server {
 
         for stream in listener.incoming() {
             //TODO: move it to the thread pool
-            println!("Received a request");
             let mut stream = stream.unwrap();
             let request = Request::parse(&mut stream);
-            println!("Parsed a request");
 
             let response = match request {
                 Ok(request) => {
                     let handler = self.handlers.iter().find(|h| h.matcher.matches(&request));
-                    println!("Found a handler");
                     match handler {
                         Some(handler) => (handler.handler_fn)(request),
                         None => not_found_response(),
@@ -131,9 +124,7 @@ impl Server {
                 Err(e) => server_error_response(e),
             };
 
-            println!("Got a response");
             response.write(&mut stream).unwrap();
-            println!("Wrote a response");
 
             //self.pool.execute(|| handle_connection(stream));
         }
@@ -189,28 +180,6 @@ impl ServerBuilder {
     pub fn build(self) -> Server {
         Server::new(self)
     }
-}
-
-fn handle_connection(mut stream: TcpStream) {
-    let reader = BufReader::new(&stream);
-
-    let request_line = reader.lines().next().unwrap().unwrap();
-    let request_line = request_line.trim();
-
-    let (status_line, file_name) = match request_line {
-        "GET / HTTP/1.1" => ("HTTP/1.1 200 OK", "index.html"),
-        "GET /sleep HTTP/1.1" => {
-            thread::sleep(Duration::from_secs(5));
-            ("HTTP/1.1 200 OK", "index.html")
-        }
-        _ => ("HTTP/1.1 404 NOT FOUND", "404.html"),
-    };
-
-    let content = fs::read_to_string(file_name).unwrap();
-    let content_length = content.len();
-
-    let response = format!("{status_line}\r\nContent-Length: {content_length}\r\n\r\n {content}");
-    stream.write_all(response.as_bytes()).unwrap();
 }
 
 fn not_found_response() -> Response {
