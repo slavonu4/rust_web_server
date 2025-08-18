@@ -12,7 +12,11 @@ fn main() {
     let config = Config::get_config();
     let server = Server::builder(config)
         .register_handler(RequestMatcher::get().url("/test").build(), |_| {
-            Response::builder().code(200).body("Test").build()
+            Response::builder()
+                .code(200)
+                .add_header("Content-Type", "text/plain")
+                .body("Test")
+                .build()
         })
         .build();
     server.start();

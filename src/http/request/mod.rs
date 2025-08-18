@@ -1,6 +1,7 @@
 use std::{
     collections::HashMap,
-    io::{Error, ErrorKind},
+    io::{BufRead, BufReader, Error, Read},
+    net::TcpStream,
 };
 
 pub mod matcher;
@@ -52,27 +53,45 @@ impl Request {
         }
     }
 
-    pub fn parse(request_str: &str) -> Result<Request, Error> {
+    pub fn parse(stream: &mut TcpStream) -> Result<Request, Error> {
         let parser_error = parser_error(String::from("Unable to parse an incoming request"));
-        let mut parts = request_str.split("\r\n");
+        let mut reader = BufReader::new(stream);
+        let mut request_line = String::default();
 
-        let (method, path) = match parts.next() {
-            Some(request_line) => parse_request_line(request_line)?,
-            None => return Err(parser_error),
+        let (method, path) = match reader.read_line(&mut request_line) {
+            Ok(_) => parse_request_line(request_line.trim())?,
+            Err(_) => return Err(parser_error),
         };
         let (url, query_params) = parse_path(&path)?;
 
         let mut header_lines = Vec::new();
-        while let Some(header_line) = parts.next() {
-            if header_line == "" {
+        let mut header_line = String::default();
+        while reader.read_line(&mut header_line).is_ok() {
+            let trimmed_header_line = String::from(header_line.trim());
+            if trimmed_header_line == "" {
                 break;
             }
 
-            header_lines.push(String::from(header_line));
+            header_lines.push(trimmed_header_line);
+            header_line.clear();
         }
 
         let headers = parse_headers(header_lines)?;
-        let body: String = parts.take_while(|s| s.to_owned() != "").collect();
+
+        let mut body = String::default();
+        if method == RequestMethod::POST
+            && let Some(content_length) = headers.get("Content-Length")
+        {
+            let content_length: Result<usize, _> = content_length.parse::<usize>();
+            if let Ok(content_length) = content_length {
+                let mut body_buf = vec![0; content_length];
+                reader.read_exact(&mut body_buf)?;
+                body = match String::from_utf8(body_buf) {
+                    Ok(body) => body,
+                    Err(_) => return Err(parser_error),
+                }
+            }
+        }
 
         Ok(Request {
             url,
@@ -93,7 +112,7 @@ impl Request {
         }
     }
 
-    pub fn get_header(&self, header_name: &str) -> Option<&Vec<String>> {
+    pub fn get_header(&self, header_name: &str) -> Option<&String> {
         self.headers.get(header_name)
     }
 
@@ -127,7 +146,7 @@ fn parse_request_line(request_line: &str) -> Result<(RequestMethod, String), Err
 fn parse_path(path: &str) -> Result<(String, HashMap<String, Vec<String>>), Error> {
     let parse_error = parser_error(format!("Invalid path: {}", path));
 
-    let mut path_parts = path.split('?');
+    let mut path_parts = path.split("&");
 
     let url = match path_parts.next() {
         Some(url) => String::from(url),
@@ -144,7 +163,7 @@ fn parse_path(path: &str) -> Result<(String, HashMap<String, Vec<String>>), Erro
 }
 
 fn parse_query_params(query_str: &str) -> Result<HashMap<String, Vec<String>>, Error> {
-    let query_params = query_str.split("&");
+    let query_params = query_str.split('?');
 
     let mut result: HashMap<String, Vec<String>> = HashMap::new();
     for query_param in query_params {
@@ -209,7 +228,7 @@ fn parse_headers(header_lines: Vec<String>) -> Result<HashMap<String, String>, E
 }
 
 fn parser_error(error_message: String) -> Error {
-    Error::new(ErrorKind::InvalidData, error_message)
+    Error::new(std::io::ErrorKind::InvalidData, error_message)
 }
 
 impl RequestBuilder {
@@ -231,8 +250,7 @@ impl RequestBuilder {
         let header_name = Into::into(header_name);
         let header_value = Into::into(header_value);
 
-        let header_entry = self.headers.entry(header_name).or_default();
-        header_entry.push(header_value);
+        self.headers.insert(header_name, header_value);
 
         self
     }
