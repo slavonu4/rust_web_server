@@ -78,20 +78,23 @@ impl Request {
 
         let headers = parse_headers(header_lines)?;
 
-        let mut body = String::default();
-        if method == RequestMethod::POST
+        let body = if method == RequestMethod::POST
             && let Some(content_length) = headers.get("Content-Length")
         {
             let content_length: Result<usize, _> = content_length.parse::<usize>();
             if let Ok(content_length) = content_length {
                 let mut body_buf = vec![0; content_length];
                 reader.read_exact(&mut body_buf)?;
-                body = match String::from_utf8(body_buf) {
+                match String::from_utf8(body_buf) {
                     Ok(body) => body,
                     Err(_) => return Err(parser_error),
                 }
+            } else {
+                String::default()
             }
-        }
+        } else {
+            String::default()
+        };
 
         Ok(Request {
             url,
@@ -163,9 +166,9 @@ fn parse_path(path: &str) -> Result<(String, HashMap<String, Vec<String>>), Erro
 }
 
 fn parse_query_params(query_str: &str) -> Result<HashMap<String, Vec<String>>, Error> {
-    let query_params = query_str.split('&');
+    let query_params: Vec<&str> = query_str.split('&').collect();
 
-    let mut result: HashMap<String, Vec<String>> = HashMap::new();
+    let mut result: HashMap<String, Vec<String>> = HashMap::with_capacity(query_params.len());
     for query_param in query_params {
         let (param_name, param_values) = parse_query_param(query_param)?;
 
