@@ -40,6 +40,10 @@ impl RequestMethod {
             _ => None,
         }
     }
+
+    pub fn can_have_body(&self) -> bool {
+        matches!(self, RequestMethod::POST | RequestMethod::PUT)
+    }
 }
 
 impl Request {
@@ -78,7 +82,7 @@ impl Request {
 
         let headers = parse_headers(header_lines)?;
 
-        let body = if method == RequestMethod::POST
+        let body = if method.can_have_body()
             && let Some(content_length) = headers.get("Content-Length")
         {
             let content_length: Result<usize, _> = content_length.parse::<usize>();
