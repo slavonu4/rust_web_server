@@ -1,18 +1,36 @@
 use clap::Parser;
 use std::{
-    fs,
-    io::{BufRead, BufReader, Write},
-    net::{Ipv4Addr, SocketAddr, SocketAddrV4, TcpListener, TcpStream},
+    error::Error,
+    net::{Ipv4Addr, SocketAddr, SocketAddrV4, TcpListener},
     ops::RangeInclusive,
-    thread,
-    time::Duration,
 };
 
-use crate::concurrent::thread_pool::ThreadPool;
+use crate::{
+    concurrent::thread_pool::ThreadPool,
+    http::{
+        request::{matcher::RequestMatcher, Request},
+        response::Response,
+    },
+};
+
+pub type HandlerFn = Box<dyn Fn(Request) -> Response>;
+
+struct RequestHandler {
+    matcher: RequestMatcher,
+    handler_fn: HandlerFn,
+}
 
 pub struct Server {
     pool: ThreadPool,
     address: SocketAddr,
+    handlers: Vec<RequestHandler>,
+}
+
+pub struct ServerBuilder {
+    pool_size: usize,
+    host: Ipv4Addr,
+    port: u16,
+    handlers: Vec<RequestHandler>,
 }
 
 #[derive(Parser, Debug)]
@@ -62,13 +80,23 @@ fn port_in_range(s: &str) -> Result<u16, String> {
 }
 
 impl Server {
-    pub fn create(config: Config) -> Server {
-        let thread_pool = ThreadPool::new(config.pool_size);
-        let address = SocketAddrV4::new(config.host, config.port);
+    fn new(builder: ServerBuilder) -> Server {
+        let thread_pool = ThreadPool::new(builder.pool_size);
+        let address = SocketAddrV4::new(builder.host, builder.port);
 
         Server {
             pool: thread_pool,
             address: SocketAddr::V4(address),
+            handlers: builder.handlers,
+        }
+    }
+
+    pub fn builder(config: Config) -> ServerBuilder {
+        ServerBuilder {
+            pool_size: config.pool_size,
+            host: config.host,
+            port: config.port,
+            handlers: Vec::new(),
         }
     }
 
@@ -78,11 +106,27 @@ impl Server {
             self.address,
             self.pool.size()
         );
-        let listener = TcpListener::bind(&self.address).unwrap();
-        for stream in listener.incoming() {
-            let stream = stream.unwrap();
+        let listener = TcpListener::bind(self.address).unwrap();
 
-            self.pool.execute(|| handle_connection(stream));
+        for stream in listener.incoming() {
+            //TODO: move it to the thread pool
+            let mut stream = stream.unwrap();
+            let request = Request::parse(&mut stream);
+
+            let response = match request {
+                Ok(request) => {
+                    let handler = self.handlers.iter().find(|h| h.matcher.matches(&request));
+                    match handler {
+                        Some(handler) => (handler.handler_fn)(request),
+                        None => not_found_response(),
+                    }
+                }
+                Err(e) => server_error_response(e),
+            };
+
+            response.write(&mut stream).unwrap();
+
+            //self.pool.execute(|| handle_connection(stream));
         }
     }
 }
@@ -99,24 +143,57 @@ impl Config {
     }
 }
 
-fn handle_connection(mut stream: TcpStream) {
-    let reader = BufReader::new(&stream);
+impl ServerBuilder {
+    pub fn pool_size(mut self, pool_size: usize) -> ServerBuilder {
+        self.pool_size = pool_size;
 
-    let request_line = reader.lines().next().unwrap().unwrap();
-    let request_line = request_line.trim();
+        self
+    }
 
-    let (status_line, file_name) = match request_line {
-        "GET / HTTP/1.1" => ("HTTP/1.1 200 OK", "index.html"),
-        "GET /sleep HTTP/1.1" => {
-            thread::sleep(Duration::from_secs(5));
-            ("HTTP/1.1 200 OK", "index.html")
-        }
-        _ => ("HTTP/1.1 404 NOT FOUND", "404.html"),
-    };
+    pub fn port(mut self, port: u16) -> ServerBuilder {
+        self.port = port;
 
-    let content = fs::read_to_string(file_name).unwrap();
-    let content_length = content.len();
+        self
+    }
 
-    let response = format!("{status_line}\r\nContent-Length: {content_length}\r\n\r\n {content}");
-    stream.write_all(response.as_bytes()).unwrap();
+    pub fn host(mut self, host: Ipv4Addr) -> ServerBuilder {
+        self.host = host;
+
+        self
+    }
+
+    pub fn register_handler(
+        mut self,
+        request_matcher: RequestMatcher,
+        request_handler: impl Fn(Request) -> Response + 'static,
+    ) -> ServerBuilder {
+        let handler = RequestHandler {
+            matcher: request_matcher,
+            handler_fn: Box::new(request_handler),
+        };
+
+        self.handlers.push(handler);
+
+        self
+    }
+
+    pub fn build(self) -> Server {
+        Server::new(self)
+    }
+}
+
+fn not_found_response() -> Response {
+    Response::builder()
+        .code(404)
+        .body("Requested page has not been found")
+        .build()
+}
+
+fn server_error_response<E>(error: E) -> Response
+where
+    E: Error,
+{
+    let response_body = format!("Something went wrong: {}", error);
+
+    Response::builder().code(500).body(response_body).build()
 }
