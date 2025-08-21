@@ -3,6 +3,7 @@ use std::{
     error::Error,
     net::{Ipv4Addr, SocketAddr, SocketAddrV4, TcpListener},
     ops::RangeInclusive,
+    sync::{Arc, Mutex},
 };
 
 use crate::{
@@ -13,7 +14,7 @@ use crate::{
     },
 };
 
-pub type HandlerFn = Box<dyn Fn(Request) -> Response>;
+pub type HandlerFn = Box<dyn Fn(Request) -> Response + Send + Sync + 'static>;
 
 struct RequestHandler {
     matcher: RequestMatcher,
@@ -23,7 +24,7 @@ struct RequestHandler {
 pub struct Server {
     pool: ThreadPool,
     address: SocketAddr,
-    handlers: Vec<RequestHandler>,
+    handlers: Arc<Mutex<Vec<RequestHandler>>>,
 }
 
 pub struct ServerBuilder {
@@ -87,7 +88,7 @@ impl Server {
         Server {
             pool: thread_pool,
             address: SocketAddr::V4(address),
-            handlers: builder.handlers,
+            handlers: Arc::new(Mutex::new(builder.handlers)),
         }
     }
 
@@ -111,20 +112,27 @@ impl Server {
         for stream in listener.incoming() {
             //TODO: move it to the thread pool
             let mut stream = stream.unwrap();
-            let request = Request::parse(&mut stream);
 
-            let response = match request {
-                Ok(request) => {
-                    let handler = self.handlers.iter().find(|h| h.matcher.matches(&request));
-                    match handler {
-                        Some(handler) => (handler.handler_fn)(request),
-                        None => not_found_response(),
+            let thread_handlers = Arc::clone(&self.handlers);
+            self.pool.execute(move || {
+                let request = Request::parse(&mut stream);
+
+                let handlers = thread_handlers.lock().unwrap();
+                let response = match request {
+                    Ok(request) => {
+                        let handler = handlers.iter().find(|h| h.matcher.matches(&request));
+                        match handler {
+                            Some(handler) => (handler.handler_fn)(request),
+                            None => not_found_response(),
+                        }
                     }
-                }
-                Err(e) => server_error_response(e),
-            };
+                    Err(e) => server_error_response(e),
+                };
 
-            response.write(&mut stream).unwrap();
+                std::mem::drop(handlers);
+
+                response.write(&mut stream).unwrap();
+            });
 
             //self.pool.execute(|| handle_connection(stream));
         }
@@ -165,7 +173,7 @@ impl ServerBuilder {
     pub fn register_handler(
         mut self,
         request_matcher: RequestMatcher,
-        request_handler: impl Fn(Request) -> Response + 'static,
+        request_handler: impl Fn(Request) -> Response + Send + Sync + 'static,
     ) -> ServerBuilder {
         let handler = RequestHandler {
             matcher: request_matcher,
