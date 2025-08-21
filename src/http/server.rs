@@ -110,7 +110,6 @@ impl Server {
         let listener = TcpListener::bind(self.address).unwrap();
 
         for stream in listener.incoming() {
-            //TODO: move it to the thread pool
             let mut stream = stream.unwrap();
 
             let thread_handlers = Arc::clone(&self.handlers);
@@ -133,8 +132,6 @@ impl Server {
 
                 response.write(&mut stream).unwrap();
             });
-
-            //self.pool.execute(|| handle_connection(stream));
         }
     }
 }
