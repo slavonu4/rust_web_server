@@ -3,7 +3,7 @@ use std::{
     error::Error,
     net::{Ipv4Addr, SocketAddr, SocketAddrV4, TcpListener},
     ops::RangeInclusive,
-    sync::{Arc, Mutex},
+    sync::Arc,
 };
 
 use crate::{

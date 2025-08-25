@@ -287,6 +287,7 @@ impl RequestBuilder {
     }
 }
 
+#[cfg(test)]
 mod tests {
     use super::*;
 
