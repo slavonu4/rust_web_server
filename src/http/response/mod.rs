@@ -1,5 +1,6 @@
 use std::{
     collections::HashMap,
+    fmt::Display,
     io::{Error, Write},
     net::TcpStream,
 };
@@ -44,8 +45,8 @@ impl Response {
     }
 }
 
-impl ToString for Response {
-    fn to_string(&self) -> String {
+impl Display for Response {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let headers = self
             .headers
             .iter()
@@ -53,12 +54,7 @@ impl ToString for Response {
                 acc + name + ": " + value + "\r\n"
             });
 
-        format!(
-            "HTTP/1.1 {}\r\n{}\r\n{}",
-            self.code.to_string(),
-            headers,
-            self.body
-        )
+        write!(f, "HTTP/1.1 {}\r\n{}\r\n{}", self.code, headers, self.body)
     }
 }
 
@@ -91,6 +87,7 @@ impl ResponseBuilder {
     }
 }
 
+#[cfg(test)]
 mod tests {
     use super::*;
 
