@@ -24,7 +24,7 @@ struct RequestHandler {
 pub struct Server {
     pool: ThreadPool,
     address: SocketAddr,
-    handlers: Arc<Mutex<Vec<RequestHandler>>>,
+    handlers: Arc<Vec<RequestHandler>>,
 }
 
 pub struct ServerBuilder {
@@ -88,7 +88,7 @@ impl Server {
         Server {
             pool: thread_pool,
             address: SocketAddr::V4(address),
-            handlers: Arc::new(Mutex::new(builder.handlers)),
+            handlers: Arc::new(builder.handlers),
         }
     }
 
@@ -116,10 +116,9 @@ impl Server {
             self.pool.execute(move || {
                 let request = Request::parse(&mut stream);
 
-                let handlers = thread_handlers.lock().unwrap();
                 let response = match request {
                     Ok(request) => {
-                        let handler = handlers.iter().find(|h| h.matcher.matches(&request));
+                        let handler = thread_handlers.iter().find(|h| h.matcher.matches(&request));
                         match handler {
                             Some(handler) => (handler.handler_fn)(request),
                             None => not_found_response(),
@@ -127,8 +126,6 @@ impl Server {
                     }
                     Err(e) => server_error_response(e),
                 };
-
-                std::mem::drop(handlers);
 
                 response.write(&mut stream).unwrap();
             });
